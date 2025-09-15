@@ -77,3 +77,16 @@ The benchmarks show that the on-line filtering of GPS points during the insert o
 The off-line filtering of GPS points using a recursive query is possible, but has a considerable overhead compared to using a custom aggregate function.
 Thus, for off-line filtering of large datasets, the custom aggregate function is the preferred method.
 
+## References
+
+- Welch, G., & Bishop, G. (1995). An Introduction to the Kalman Filter.
+  Classic tutorial, freely available online via UNC Chapel Hill.
+  [PDF](https://www.cs.unc.edu/~welch/media/pdf/kalman_intro.pdf)
+- Seliquini, R. F. (2018). Implementation of an Extended Kalman Filter Using Inertial Sensor Data. Old Dominion University.
+  [PDF](https://digitalcommons.odu.edu/context/mae_etds/article/1347/viewcontent/Seliquini_implementation_of_an_extended_Kalman_filter.pdf)
+- The PostgreSQL Global Development Group. (2024). Documentation: 17: 7.8. WITH Queries (Common Table Expressions).
+  PostgreSQL Official Documentation.
+  https://www.postgresql.org/docs/current/queries-with.html
+- The PostgreSQL Global Development Group. (2024). Documentation: 17: 37.10. User-Defined Aggregates.
+  PostgreSQL Official Documentation.
+  https://www.postgresql.org/docs/current/xaggr.html
