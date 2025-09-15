@@ -51,27 +51,23 @@ The benchmarks are created using `pgbench` and the four scripts
 
 Bencharking using the `benchmark_insert_nofilter.sql` and `benchmark_insert_upsert.sql` scripts yields the following results:
 
-+-----------------------------+---------------------+---------------------+
 |        TEST                 |  INSERT NO FILTER   |  INSERT WITH FILTER |
-+-----------------------------+---------------------+---------------------+
+|-----------------------------|---------------------|---------------------|
 | number of clients           |         1           |          1          |
 | number of transactions      |        1000         |        1000         |
 | latency avg (ms)            |        8.543        |       13.560        |
 | tps (excluding connections) |      117.048322     |       73.743893     |
-+-----------------------------+---------------------+---------------------+
 
 ### Off-line filter via recursive query / custom aggregate
 
 Bencharking using the `benchmark_offline_recursive.sql` and `benchmark_offline_aggregate.sql` scripts yields the following results:
 
-+-----------------------------+---------------------+---------------------+
-|        TEST                 |  OFFLINE RECURSIVE  |  OFFLINE AGGREGATE  |
-+-----------------------------+---------------------+---------------------+
-| number of clients           |         1           |          1          |
-| number of transactions      |        1000         |        1000         |
-| latency avg (ms)            |        0.290        |        0.226        |
-| tps (excluding connections) |     3442.637060     |     4419.401171     |
-+-----------------------------+---------------------+---------------------+
+| TEST                          |  OFFLINE RECURSIVE  |  OFFLINE AGGREGATE  |
+|-------------------------------|---------------------|---------------------|
+| number of clients             |         1           |          1          |
+| number of transactions        |        1000         |        1000         |
+| latency avg (ms)              |        0.290        |        0.226        |
+| tps (excluding connections)   |     3442.637060     |     4419.401171     |
 
 (all benchmarks were performed on the same machine and with the same dataset: `pgbench -f <script>.sql -t 1000`)
 
