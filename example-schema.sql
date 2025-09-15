@@ -25,7 +25,7 @@ create table kalman.devices (
 create function kalman.kalman_step(
     prev_lat double precision,
     prev_lon double precision,
-    prev_P float8[][],           -- 2x2 previous covariance matrix
+    prev_P float8[2][2],           -- 2x2 previous covariance matrix
     curr_lat double precision,
     curr_lon double precision,
     prev_time timestamptz,
@@ -61,7 +61,7 @@ DECLARE
     sigma_lat DOUBLE PRECISION;
     sigma_lon DOUBLE PRECISION;
     delta_t DOUBLE PRECISION;
-    process_sigma CONSTANT FLOAT8 := 0.00001; -- Prozessrauschen pro Sekunde (in Grad)
+    process_sigma CONSTANT FLOAT8 := 0.00001; -- process noise per second (in degrees)
     dist FLOAT8;
 BEGIN
     delta_t := EXTRACT(EPOCH FROM (curr_time - prev_time));
@@ -103,10 +103,11 @@ BEGIN
     -- predict
     x_pred := x_prev;
 
-    P := mat_add(
-            mat_mult(
-                    mat_mult(F, prev_P),
-                    mat_transpose(F)
+    -- predicted covariance
+    P := kalman.mat_add(
+            kalman.mat_mult(
+                    kalman.mat_mult(F, prev_P),
+                    kalman.mat_transpose(F)
             ),
             Q
          );
@@ -115,17 +116,17 @@ BEGIN
     y[2] := curr_lon - x_pred[2];
 
     -- covariance S
-    S := mat_add(
-            mat_mult(
-                    mat_mult(H, P),
-                    mat_transpose(H)
+    S := kalman.mat_add(
+            kalman.mat_mult(
+                    kalman.mat_mult(H, P),
+                    kalman.mat_transpose(H)
             ),
             R
          );
 
     -- inverse of S
     BEGIN
-        S := mat_inv2x2(S);
+        S := kalman.mat_inv2x2(S);
     EXCEPTION WHEN OTHERS THEN
         RAISE NOTICE 'Cannot invert covariance matrix "%".', S;
         RETURN QUERY SELECT
@@ -136,8 +137,8 @@ BEGIN
     END;
 
     -- Kalman Gain
-    K := mat_mult(
-            mat_mult(P, mat_transpose(H)),
+    K := kalman.mat_mult(
+            kalman.mat_mult(P, kalman.mat_transpose(H)),
             S
          );
 
@@ -146,10 +147,10 @@ BEGIN
     x_pred[2] := x_pred[2] + K[2][1] * y[1] + K[2][2] * y[2];
 
     -- update covariance matrix
-    P := mat_mult(
-            mat_sub(
-                    mat_eye(2),
-                    mat_mult(K, H)
+    P := kalman.mat_mult(
+            kalman.mat_sub(
+                    kalman.mat_eye(2),
+                    kalman.mat_mult(K, H)
             ),
             P
          );
@@ -169,7 +170,7 @@ $$
 DECLARE
     rows INT := array_upper(a,1);
     cols INT := array_upper(b,2);
-inner INT := array_upper(a,2);
+    inner INT := array_upper(a,2);
     res FLOAT8[][];
     r INT;
     c INT;
@@ -278,7 +279,7 @@ CREATE FUNCTION kalman.mat_eye(n INT)
     RETURNS FLOAT8[][] AS
 $$
 DECLARE
-res FLOAT8[][];
+    res FLOAT8[][];
     r INT;
 BEGIN
     res := ARRAY(SELECT ARRAY(SELECT 0::FLOAT8 FROM generate_series(1,n)) FROM generate_series(1,n));
@@ -308,7 +309,7 @@ begin
         p := ARRAY[
                 [0.001, 0.0],
                 [0.0, 0.001]
-            ];
+            ]::float8[2][2]; -- initial covariance matrix
         state := jsonb_build_object(
                     'lat', filtered_lat,
                     'lon', filtered_lon,
@@ -324,9 +325,9 @@ begin
                 (state->>'lat')::double precision,
                 (state->>'lon')::double precision,
                 array[
-                    array[(state->'p'->0->>0)::float8, (state->'p'->0->>1)::float8],
-                array[(state->'p'->1->>0)::float8, (state->'p'->1->>1)::float8]
-                    ],
+                        array[(state->'p'->0->>0)::float8, (state->'p'->0->>1)::float8],
+                        array[(state->'p'->1->>0)::float8, (state->'p'->1->>1)::float8]
+                    ]::float8[2][2],
                 ilatitude,
                 ilongitude,
                 (state->>'time')::timestamptz,
@@ -413,47 +414,3 @@ CREATE AGGREGATE kalman.kalman_filter_agg(
     STYPE = kalman.kalman_state
     -- no INITCOND, NULL initial is valid and will be handled in SFUNC
 );
-
--- example usage of the on-line data filtering
-select kalman.upsert_position(1, '2025-09-09T12:00:00Z', 8.5417, 47.3769, 1.0);
-
-select * from kalman.positions;
-
-select kalman.upsert_position(1, '2025-09-09T12:00:10Z', 8.5421, 47.3772, 1.0);
-
-select * from kalman.positions;
-select * from kalman.devices;
-
--- example usage of the kalman filter step in a recursive CTE query
-with recursive prev_row as (
-    select *
-    from pos
-    where rn = 1
-    union all
-    select t.rn, t.datetime, t.longitude, t.latitude, t.hdop,
-           (kalman.kalman_step(p.est_lat, p.est_lon, p.p, t.latitude, t.longitude, p.datetime, t.datetime, t.hdop, 5.0)).est_lon as est_lon,
-           (kalman.kalman_step(p.est_lat, p.est_lon, p.p, t.latitude, t.longitude, p.datetime, t.datetime, t.hdop, 5.0)).est_lat as est_lat,
-           (kalman.kalman_step(p.est_lat, p.est_lon, p.p, t.latitude, t.longitude, p.datetime, t.datetime, t.hdop, 5.0)).updated_P as p
-    from prev_row p
-             join pos t on t.rn = p.rn+ 1
-),
-pos as (
-    select row_number() over (order by datetime) as rn, datetime, longitude, latitude, hdop, longitude as est_lon, latitude as est_lat, ARRAY[ [0.001,0.0], [0.0,0.001]]::float8[2][2] as p
-    from kalman.positions where device_id=1 and datetime >= '2025-09-09T00:00:00Z' and datetime <= '2025-09-10T00:00:00Z' order by datetime
-)
-select st_makeline(st_makepoint(est_lon,est_lat)) as filtered_with_hdop, 'filtered_with_hdop' as name
-from prev_row;
-
--- example usage of the kalman filter aggregate function
-with pos as (
-    select row_number() over (order by datetime) as rn, datetime, longitude, latitude, hdop, longitude as est_lon, latitude as est_lat, ARRAY[ [0.001,0.0], [0.0,0.001]]::float8[2][2] as p from kalman.positions where
-        device_id=1 and datetime >= '2025-09-09T00:00:00Z' and datetime <= '2025-09-10T00:00:00Z' order by datetime
-)
-SELECT
-    st_makeline(st_makepoint(
-        (kstate).est_lon,
-        (kstate).est_lat))
-FROM (
-    SELECT kalman.kalman_filter_agg(latitude, longitude, datetime, hdop, 5.0) over (order by datetime rows between unbounded preceding and current row) AS kstate
-    FROM pos ORDER BY datetime
-) AS sub;
